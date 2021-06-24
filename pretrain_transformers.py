@@ -23,6 +23,7 @@ import random
 import re
 import shutil
 from typing import Dict, List, Tuple
+import wandb
 
 import numpy as np
 import torch
@@ -299,12 +300,17 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
 
     tr_loss, logging_loss = 0.0, 0.0
 
+    wandb.login()
+    wandb.init(project="hse_dl_2021",
+               notes="rugpt",
+               tags=["gpt"])
+
     model.zero_grad()
     train_iterator = trange(
         epochs_trained, int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0]
     )
     set_seed(args)  # Added here for reproducibility
-    for _ in train_iterator:
+    for i in train_iterator:
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
 
@@ -332,6 +338,8 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                 loss.backward()
 
             tr_loss += loss.item()
+            wandb.log({"Train loss": loss.item(), 'epoch': i})
+
             if (step + 1) % args.gradient_accumulation_steps == 0:
                 if args.fp16:
                     torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), args.max_grad_norm)
@@ -353,6 +361,8 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                     tb_writer.add_scalar("lr", scheduler.get_lr()[0], global_step)
                     tb_writer.add_scalar("loss", (tr_loss - logging_loss) / args.logging_steps, global_step)
                     logging_loss = tr_loss
+
+                    accum_loss = 0.
 
                 if args.local_rank in [-1, 0] and args.save_steps > 0 and global_step % args.save_steps == 0:
                     checkpoint_prefix = "checkpoint"
@@ -377,6 +387,11 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
             if 0 < args.max_steps < global_step:
                 epoch_iterator.close()
                 break
+
+        # eval
+        result = evaluate(args, model, tokenizer, prefix=prefix)
+        wandb.log({"Perplexity": result['perplexity']})
+
         if 0 < args.max_steps < global_step:
             train_iterator.close()
             break
