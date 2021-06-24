@@ -389,7 +389,7 @@ def train(args, train_dataset, model: PreTrainedModel, tokenizer: PreTrainedToke
                 break
 
         # eval
-        result = evaluate(args, model, tokenizer, prefix=prefix)
+        result = evaluate(args, model, tokenizer)
         wandb.log({"Perplexity": result['perplexity']})
 
         if 0 < args.max_steps < global_step:
